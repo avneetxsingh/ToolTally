@@ -94,8 +94,7 @@ class RaspberryPiHardwareController(HardwareController):
             self.lock_drawer(tool)
 
     def open_flap(self, tool: ToolClass) -> None:
-        self.close_all_flaps()
-        self.servo.open(tool, auto_close=False)
+        self.servo.open(tool)
 
     def close_all_flaps(self) -> None:
         self.servo.close_all()

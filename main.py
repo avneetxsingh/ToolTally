@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import time
 
 from src.config import load_config
 from src.detection.providers import CameraDetectionProvider, ManualInputDetectionProvider
@@ -65,9 +64,6 @@ def main() -> int:
 
             print(f"[SYS] Detected: {event.tool.value} ({event.confidence:.2f})")
             hardware.open_flap(event.tool)
-            time.sleep(cfg.timing.flap_open_seconds)
-            hardware.close_all_flaps()
-            time.sleep(cfg.timing.flap_settle_seconds)
     except KeyboardInterrupt:
         print("\n[SYS] Shutting down")
     except ValueError as exc:

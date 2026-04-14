@@ -54,9 +54,6 @@ class ToolTallyController:
     def _process_tool(self, tool: ToolClass) -> None:
         self.ui.show_status(f"Detected {tool.value}. Opening flap.")
         self.hardware.open_flap(tool)
-        time.sleep(self.config.timing.flap_open_seconds)
-        self.hardware.close_all_flaps()
-        time.sleep(self.config.timing.flap_settle_seconds)
 
         pin = self.ui.request_pin_suffix(tool)
         if len(pin) != 4 or not pin.isdigit():
