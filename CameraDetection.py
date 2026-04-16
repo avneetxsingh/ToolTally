@@ -1,104 +1,142 @@
+from __future__ import annotations
+
+import os
+import time
+from pathlib import Path
+from typing import Tuple
+
 import cv2
 import numpy as np
-import time
 from picamera2 import Picamera2
-import os
 
-MODEL_PATH = "best.onnx"
+from src.models import ToolClass, tool_from_label
+
+MODEL_PATH = Path("best.onnx")
 IMG_SIZE = 320
 CLASS_NAMES = ["pliers", "screwdriver", "white", "wrench"]
 
-net = cv2.dnn.readNetFromONNX(MODEL_PATH)
-net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
-net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
 
-picam2 = Picamera2()
-config = picam2.create_preview_configuration(main={"format": 'RGB888', "size": (640, 480)})
-picam2.configure(config)
-picam2.start()
+class CameraDetectionEngine:
+    def __init__(
+        self,
+        camera_index: int = 0,
+        show_preview: bool = True,
+        model_path: str = str(MODEL_PATH),
+    ) -> None:
+        # Picamera2 doesn't use a camera index, but we keep this argument
+        # for compatibility with the detection provider interface.
+        self.camera_index = camera_index
+        self.show_preview = show_preview
+        self.has_display = os.environ.get("DISPLAY") is not None
 
-time.sleep(3)
-try:
-    picam2.set_controls({
-        "AeEnable": True,
-        "AwbEnable": True,
-        "Brightness": 0.1,
-        "Contrast": 1.2,
-        "Sharpness": 1.5,
-        "AfMode": 2,        # 2 = continuous autofocus
-        "AfSpeed": 1,       # 1 = fast
-    })
-    print("Autofocus enabled.")
-except Exception as e:
-    # Some Pi camera modules don't support autofocus (e.g. IMX219)
-    # IMX708 (Camera Module 3) does support it
-    print(f"Autofocus not supported on this module: {e}")
-    picam2.set_controls({
-        "AeEnable": True,
-        "AwbEnable": True,
-        "Brightness": 0.1,
-        "Contrast": 1.2,
-        "Sharpness": 1.5,
-    })
-time.sleep(2)
+        self.net = cv2.dnn.readNetFromONNX(model_path)
+        self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+        self.net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
 
-HAS_DISPLAY = os.environ.get("DISPLAY") is not None
+        self.picam2 = Picamera2()
+        config = self.picam2.create_preview_configuration(
+            main={"format": "RGB888", "size": (640, 480)}
+        )
+        self.picam2.configure(config)
+        self.picam2.start()
 
-def postprocess_cls(preds):
-    outputs = np.squeeze(np.array(preds))
-    exp_scores = np.exp(outputs - np.max(outputs))
-    probs = exp_scores / np.sum(exp_scores)
-    class_id = int(np.argmax(probs))
-    conf = float(probs[class_id])
-    label = CLASS_NAMES[class_id]
-    return label, conf
+        time.sleep(3)
+        self._configure_camera_controls()
+        time.sleep(2)
 
-try:
-    while True:
-        frame_rgb = picam2.capture_array()
+    def _configure_camera_controls(self) -> None:
+        try:
+            self.picam2.set_controls(
+                {
+                    "AeEnable": True,
+                    "AwbEnable": True,
+                    "Brightness": 0.1,
+                    "Contrast": 1.2,
+                    "Sharpness": 1.5,
+                    "AfMode": 2,
+                    "AfSpeed": 1,
+                }
+            )
+            print("Autofocus enabled.")
+        except Exception as exc:
+            print(f"Autofocus not supported on this module: {exc}")
+            self.picam2.set_controls(
+                {
+                    "AeEnable": True,
+                    "AwbEnable": True,
+                    "Brightness": 0.1,
+                    "Contrast": 1.2,
+                    "Sharpness": 1.5,
+                }
+            )
+
+    @staticmethod
+    def _postprocess_cls(preds: np.ndarray) -> Tuple[str, float]:
+        outputs = np.squeeze(np.array(preds))
+        exp_scores = np.exp(outputs - np.max(outputs))
+        probs = exp_scores / np.sum(exp_scores)
+        class_id = int(np.argmax(probs))
+        confidence = float(probs[class_id])
+        label = CLASS_NAMES[class_id]
+        return label, confidence
+
+    def next_tool_event(self) -> Tuple[ToolClass, float]:
+        frame_rgb = self.picam2.capture_array()
         h, w = frame_rgb.shape[:2]
 
         size = min(h, w)
         x_off = (w - size) // 2
         y_off = (h - size) // 2
-        square_img = frame_rgb[y_off:y_off+size, x_off:x_off+size]
+        square_img = frame_rgb[y_off : y_off + size, x_off : x_off + size]
 
         blob = cv2.dnn.blobFromImage(
             square_img,
-            scalefactor=1/255.0,
+            scalefactor=1 / 255.0,
             size=(IMG_SIZE, IMG_SIZE),
             swapRB=True,
-            crop=False
+            crop=False,
         )
 
-        net.setInput(blob)
+        self.net.setInput(blob)
         start_time = time.time()
-        preds = net.forward()
+        preds = self.net.forward()
         inference_ms = (time.time() - start_time) * 1000
 
-        label, conf = postprocess_cls(preds)
+        label, confidence = self._postprocess_cls(preds)
+        tool = tool_from_label(label)
+        if tool is None:
+            raise ValueError(f"Unknown class label from model: {label}")
 
-        print(f"{label.upper():12s}  conf={conf:.3f}  ({int(inference_ms)}ms)")
+        print(f"{label.upper():12s}  conf={confidence:.3f}  ({int(inference_ms)}ms)")
 
-        if HAS_DISPLAY:
-            display_frame = cv2.cvtColor(square_img, cv2.COLOR_RGB2BGR)
-            color = (0, 255, 0) if label != "white" else (0, 0, 255)
-            cv2.rectangle(display_frame, (0, 0), (640, 50), (0, 0, 0), -1)
-            cv2.putText(display_frame,
-                        f"{label.upper()}  {conf:.2f}  ({int(inference_ms)}ms)",
-                        (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
-            cv2.imshow("Smart Toolbox AI", display_frame)
+        if self.show_preview and self.has_display:
+            self._render_preview(square_img, label, confidence, inference_ms)
 
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q'):
-                break
-            elif key == ord('s'):
-                cv2.imwrite("debug.jpg", cv2.cvtColor(square_img, cv2.COLOR_RGB2BGR))
-                print("Saved debug.jpg")
+        return tool, confidence
 
-except KeyboardInterrupt:
-    print("\nShutting down...")
-finally:
-    picam2.stop()
-    if HAS_DISPLAY:
-        cv2.destroyAllWindows()
+    def _render_preview(
+        self,
+        square_img: np.ndarray,
+        label: str,
+        confidence: float,
+        inference_ms: float,
+    ) -> None:
+        display_frame = cv2.cvtColor(square_img, cv2.COLOR_RGB2BGR)
+        color = (0, 255, 0) if label != "white" else (0, 0, 255)
+        cv2.rectangle(display_frame, (0, 0), (640, 50), (0, 0, 0), -1)
+        cv2.putText(
+            display_frame,
+            f"{label.upper()}  {confidence:.2f}  ({int(inference_ms)}ms)",
+            (20, 35),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            color,
+            2,
+        )
+        cv2.imshow("Smart Toolbox AI", display_frame)
+        cv2.waitKey(1)
+
+    def cleanup(self) -> None:
+        self.picam2.stop()
+        if self.has_display:
+            cv2.destroyAllWindows()
