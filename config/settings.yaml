@@ -6,6 +6,7 @@ timing:
 
 hardware:
   mode: mock # use "raspberry_pi" on the Pi
+  linearactuator: 8
   active_low: false
   servo_open_angle: 90
   servo_close_angle: 0

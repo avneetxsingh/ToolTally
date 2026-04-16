@@ -6,6 +6,7 @@ import argparse
 from src.config import load_config
 from src.detection.providers import CameraDetectionProvider, ManualInputDetectionProvider
 from src.hardware.controller import MockHardwareController, RaspberryPiHardwareController
+from src.hardware.servo_test import run_servo_test
 from src.models import ToolClass
 
 
@@ -43,12 +44,23 @@ def parse_args() -> argparse.Namespace:
         default="config/settings.yaml",
         help="Path to app config file",
     )
+    parser.add_argument(
+        "--servo-test",
+        action="store_true",
+        help="Run PCA9685 linear actuator sweep test loop and exit normal runtime",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     cfg = load_config(args.config)
+
+    if args.servo_test:
+        channel = cfg.hardware.linearactuator if cfg.hardware.linearactuator is not None else 8
+        run_servo_test(channel)
+        return 0
+
     hardware = build_hardware(cfg)
     detector = build_detector(cfg)
 

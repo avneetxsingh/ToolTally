@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import yaml
 
@@ -22,6 +22,7 @@ class HardwareConfig:
     mode: str
     flap_pins: Dict[ToolClass, int]
     solenoid_pins: Dict[ToolClass, int]
+    linearactuator: Optional[int]
     active_low: bool
     servo_open_angle: int
     servo_close_angle: int
@@ -71,6 +72,11 @@ def load_config(path: str | Path) -> AppConfig:
         mode=hardware_raw["mode"],
         flap_pins=_to_tool_map(hardware_raw["flap_pins"]),
         solenoid_pins=_to_tool_map(hardware_raw["solenoid_pins"]),
+        linearactuator=(
+            int(hardware_raw["linearactuator"])
+            if hardware_raw.get("linearactuator") is not None
+            else None
+        ),
         active_low=bool(hardware_raw.get("active_low", False)),
         servo_open_angle=int(hardware_raw.get("servo_open_angle", 90)),
         servo_close_angle=int(hardware_raw.get("servo_close_angle", 0)),
