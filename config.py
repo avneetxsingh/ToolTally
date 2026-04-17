@@ -9,6 +9,16 @@
 # From your Supabase project → Settings → API
 SUPABASE_URL = "https://xifcjijtpjrmlyxvtfoy.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhpZmNqaWp0cGpybWx5eHZ0Zm95Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3NTE3NjYsImV4cCI6MjA5MTMyNzc2Nn0.wsvL2uI07UagqElyhxewnH2xKkTSMwMvNhTjEj7wMIM"
+SUPABASE_USERS_TABLE = "users"
+SUPABASE_LOGS_TABLE  = "logs"
+
+# Local offline-first database path.
+LOCAL_DB_PATH = "data/tooltally.db"
+
+# Background sync tuning.
+SYNC_ENABLED = True
+SYNC_INTERVAL_SECS = 5
+SYNC_MAX_RETRIES = 20
 
 
 # ═══════════════════════════════════════════════════════════════════
