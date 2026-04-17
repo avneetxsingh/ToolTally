@@ -20,6 +20,11 @@ import subprocess
 import threading
 import numpy as np
 
+try:
+    from picamera2 import Picamera2
+except Exception:
+    Picamera2 = None
+
 from config import (MODEL_PATH, CLASS_NAMES, EMPTY_CLASS,
                     FRAME_WIDTH, FRAME_HEIGHT,
                     FRAMERATE, IMG_SIZE,
@@ -36,23 +41,22 @@ def _softmax(x):
     return e / e.sum()
 
 
-def _classify(net, frame_bgr):
+def _classify(net, frame, swap_rb):
     """
     Center-crop to square, run cv2.dnn classification.
     Returns (label, confidence, square_crop).
     """
-    h, w = frame_bgr.shape[:2]
+    h, w = frame.shape[:2]
     size  = min(h, w)
     x_off = (w - size) // 2
     y_off = (h - size) // 2
-    square = frame_bgr[y_off:y_off + size, x_off:x_off + size]
+    square = frame[y_off:y_off + size, x_off:x_off + size]
 
-    # rpicam-vid MJPEG → cv2.imdecode gives BGR, so swapRB=False.
     blob = cv2.dnn.blobFromImage(
         square,
         scalefactor=1 / 255.0,
         size=(IMG_SIZE, IMG_SIZE),
-        swapRB=False,
+        swapRB=swap_rb,
         crop=False,
     )
     net.setInput(blob)
@@ -73,6 +77,8 @@ class CameraDetector:
         self._running       = False
         self._thread        = None
         self._proc          = None
+        self._picam2        = None
+        self._camera_mode   = None  # "picamera2" or "rpicam-vid"
 
         self._latest_frame  = None
         self._latest_label  = EMPTY_CLASS
@@ -95,6 +101,12 @@ class CameraDetector:
 
     def stop(self):
         self._running = False
+        if self._picam2 is not None:
+            try:
+                self._picam2.stop()
+            except Exception:
+                pass
+            self._picam2 = None
         if self._proc is not None:
             try:
                 self._proc.terminate()
@@ -118,6 +130,43 @@ class CameraDetector:
 
     # ── Camera pipe ──────────────────────────────────────────────
     def _open_camera(self):
+        if Picamera2 is not None:
+            picam2 = Picamera2()
+            cfg = picam2.create_preview_configuration(
+                main={"format": "RGB888", "size": (FRAME_WIDTH, FRAME_HEIGHT)}
+            )
+            picam2.configure(cfg)
+            picam2.start()
+
+            # Apply the same tuning from high_res_classification.py.
+            try:
+                picam2.set_controls({
+                    "AeEnable": True,
+                    "AwbEnable": True,
+                    "Brightness": 0.3,
+                    "Contrast": 1.2,
+                    "Sharpness": 2,
+                    "AfMode": 2,   # continuous autofocus
+                    "AfSpeed": 1,  # fast
+                })
+                _log("picamera2 started with autofocus controls")
+            except Exception as e:
+                _log(f"picamera2 autofocus controls unavailable: {e}")
+                try:
+                    picam2.set_controls({
+                        "AeEnable": True,
+                        "AwbEnable": True,
+                        "Brightness": 0.1,
+                        "Contrast": 1.2,
+                        "Sharpness": 1.5,
+                    })
+                except Exception:
+                    pass
+
+            self._picam2 = picam2
+            self._camera_mode = "picamera2"
+            return
+
         cmd = [
             "rpicam-vid",
             "--width",     str(FRAME_WIDTH),
@@ -131,13 +180,14 @@ class CameraDetector:
             "-n",
         ]
         _log(f"spawning: {' '.join(cmd)}")
-        return subprocess.Popen(cmd,
-                                stdout=subprocess.PIPE,
-                                stderr=subprocess.DEVNULL)
+        self._proc = subprocess.Popen(cmd,
+                                      stdout=subprocess.PIPE,
+                                      stderr=subprocess.DEVNULL)
+        self._camera_mode = "rpicam-vid"
 
     def _loop(self):
         try:
-            self._proc = self._open_camera()
+            self._open_camera()
         except FileNotFoundError:
             _log("ERROR: rpicam-vid not found. Is it installed on this Pi?")
             self._running = False
@@ -147,8 +197,44 @@ class CameraDetector:
             self._running = False
             return
 
-        buf = b""
         time.sleep(2)  # camera warm-up
+
+        if self._camera_mode == "picamera2":
+            while self._running and self._picam2 is not None:
+                try:
+                    frame_rgb = self._picam2.capture_array()
+                except Exception as e:
+                    _log(f"picamera2 capture failed: {e}")
+                    break
+
+                if frame_rgb is None:
+                    time.sleep(0.01)
+                    continue
+
+                try:
+                    label, conf, square = _classify(self._net, frame_rgb, swap_rb=True)
+                except Exception as e:
+                    _log(f"inference error: {e}")
+                    continue
+
+                frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+                with self._lock:
+                    self._latest_frame  = frame_bgr
+                    self._latest_label  = label
+                    self._latest_conf   = conf
+                    self._latest_square = square
+                    self.available      = True
+
+            _log("picamera2 loop exiting")
+            if self._picam2 is not None:
+                try:
+                    self._picam2.stop()
+                except Exception:
+                    pass
+                self._picam2 = None
+            return
+
+        buf = b""
 
         while self._running:
             try:
@@ -186,7 +272,8 @@ class CameraDetector:
                 continue
 
             try:
-                label, conf, square = _classify(self._net, frame)
+                # rpicam-vid MJPEG -> cv2.imdecode yields BGR.
+                label, conf, square = _classify(self._net, frame, swap_rb=False)
             except Exception as e:
                 _log(f"inference error: {e}")
                 continue

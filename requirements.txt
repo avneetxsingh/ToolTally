@@ -9,6 +9,7 @@
 numpy
 opencv-python
 Pillow
+picamera2
 
 # Supabase client
 supabase
