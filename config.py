@@ -32,7 +32,7 @@ CLASS_NAMES  = ["pliers", "screwdriver", "white", "wrench"]
 EMPTY_CLASS  = "white"
 
 # Minimum confidence to accept a detection in the UI.
-CONFIDENCE   = 0.60
+CONFIDENCE   = 0.38
 
 # Require N consecutive stable frames of the same class before the
 # Confirm button enables, to avoid flicker.
@@ -76,8 +76,8 @@ PCA_FREQUENCY  = 50
 
 # ── Flap angles ─────────────────────────────────────────────────────
 # Adjust these on real hardware; different flaps may need different angles.
-FLAP_CLOSED_ANGLE = 0
-FLAP_OPEN_ANGLE   = 90
+FLAP_CLOSED_ANGLE = 90
+FLAP_OPEN_ANGLE   = 0
 
 # Per-tool overrides — leave empty to use the defaults above, or add
 # entries like: "wrench": {"open": 100, "closed": 5}
@@ -88,13 +88,14 @@ FLAP_ANGLE_OVERRIDES = {
 }
 
 # ── Slide angles ────────────────────────────────────────────────────
-SLIDE_REST_ANGLE   = 0      # default/resting position
-SLIDE_ACTIVE_ANGLE = 180    # swept position that pushes the tool
-
+SLIDE_REST_ANGLE   = 180     # default/resting position
+SLIDE_ACTIVE_ANGLE = 0    # swept position that pushes the tool
+SLIDE_MIN_PULSE = 500
+SLIDE_MAX_PULSE = 5500
 # ── Timings (seconds) ───────────────────────────────────────────────
 FLAP_OPEN_SETTLE_SECS  = 0.6   # wait after flap opens before slide moves
-SLIDE_ACTIVE_SECS      = 2.0   # how long the slide stays in active position
-SLIDE_RETURN_SETTLE    = 0.6   # wait after slide returns before flap closes
+SLIDE_ACTIVE_SECS      = 3.0   # how long the slide stays in active position
+SLIDE_RETURN_SETTLE    = 2.0   # wait after slide returns before flap closes
 FLAP_HOLD_OPEN_SECS    = 5.0   # TAKE flow: how long the flap stays open
 
 # When using admin "manual open", how long to hold before auto-close.
