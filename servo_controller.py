@@ -35,7 +35,7 @@ import threading
 from config import (SERVO_CHANNELS, SLIDE_CHANNEL, PCA_FREQUENCY,
                     FLAP_CLOSED_ANGLE, FLAP_OPEN_ANGLE,
                     FLAP_ANGLE_OVERRIDES,
-                    SLIDE_REST_ANGLE, SLIDE_ACTIVE_ANGLE,
+                    SLIDE_REST_ANGLE, SLIDE_ACTIVE_ANGLE,SLIDE_MIN_PULSE,SLIDE_MAX_PULSE,
                     SLIDE_ACTIVE_SECS,
                     FLAP_HOLD_OPEN_SECS,
                     ALLOW_SIMULATION, VERBOSE_LOGS)
@@ -98,7 +98,9 @@ class ServoController:
             for tool, ch in SERVO_CHANNELS.items():
                 self._flap_servos[tool] = adafruit_servo.Servo(self._pca.channels[ch])
 
-            self._slide_servo = adafruit_servo.Servo(self._pca.channels[SLIDE_CHANNEL])
+            self._slide_servo = adafruit_servo.Servo(self._pca.channels[SLIDE_CHANNEL], 
+								min_pulse=SLIDE_MIN_PULSE,
+								max_pulse=SLIDE_MAX_PULSE)
 
             # Move everything to its safe rest position.
             for tool in SERVO_CHANNELS:
